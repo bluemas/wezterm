@@ -816,6 +816,10 @@ pub struct Config {
     #[dynamic(default = "default_true")]
     pub unzoom_on_switch_pane: bool,
 
+    /// When true, automatically equalize pane sizes after splitting a pane.
+    #[dynamic(default)]
+    pub equalize_panes_on_split: bool,
+
     #[dynamic(default = "default_max_fps")]
     pub max_fps: u64,
 

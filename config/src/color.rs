@@ -155,6 +155,8 @@ pub struct Palette {
     pub scrollbar_thumb: Option<RgbaColor>,
     /// The color of the split line between panes
     pub split: Option<RgbaColor>,
+    /// The color of the split line adjacent to the active pane
+    pub split_active: Option<RgbaColor>,
     /// The color of the visual bell. If unspecified, the foreground
     /// color is used instead.
     pub visual_bell: Option<RgbaColor>,
@@ -215,6 +217,7 @@ impl Palette {
             },
             scrollbar_thumb: overlay!(scrollbar_thumb),
             split: overlay!(split),
+            split_active: overlay!(split_active),
             visual_bell: overlay!(visual_bell),
             compose_cursor: overlay!(compose_cursor),
             copy_mode_active_highlight_fg: overlay!(copy_mode_active_highlight_fg),
@@ -250,6 +253,7 @@ impl From<ColorPalette> for Palette {
         apply_color!(selection_bg);
         apply_color!(scrollbar_thumb);
         apply_color!(split);
+        apply_color!(split_active);
 
         let mut ansi = [RgbaColor::default(); 8];
         for (idx, col) in cp.colors.0[0..8].iter().enumerate() {
@@ -290,6 +294,7 @@ impl From<Palette> for ColorPalette {
         apply_color!(selection_bg);
         apply_color!(scrollbar_thumb);
         apply_color!(split);
+        apply_color!(split_active);
 
         if let Some(ansi) = cfg.ansi {
             for (idx, col) in ansi.iter().enumerate() {

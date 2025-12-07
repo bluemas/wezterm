@@ -1557,6 +1557,14 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             icon: None,
         },
         AdjustPaneSize(PaneDirection::Next | PaneDirection::Prev, _) => return None,
+        EqualizePanes => CommandDef {
+            brief: "Equalize Pane Sizes".into(),
+            doc: "Adjusts all panes to have equal sizes within each split".into(),
+            keys: vec![(Modifiers::SUPER.union(Modifiers::SHIFT), "e".into())],
+            args: &[ArgType::ActivePane],
+            menubar: &["Window", "Resize Pane"],
+            icon: None,
+        },
         ActivatePaneDirection(PaneDirection::Next | PaneDirection::Prev) => return None,
         ActivatePaneDirection(PaneDirection::Left) => CommandDef {
             brief: "Activate Pane Left".into(),
@@ -2128,6 +2136,7 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
         AdjustPaneSize(PaneDirection::Right, 1),
         AdjustPaneSize(PaneDirection::Up, 1),
         AdjustPaneSize(PaneDirection::Down, 1),
+        EqualizePanes,
         ActivatePaneDirection(PaneDirection::Left),
         ActivatePaneDirection(PaneDirection::Right),
         ActivatePaneDirection(PaneDirection::Up),

@@ -1,6 +1,6 @@
 use anyhow::{anyhow, bail, Context};
 use config::keyassignment::SpawnCommand;
-use config::TermConfig;
+use config::{configuration, TermConfig};
 use mux::activity::Activity;
 use mux::domain::SplitSource;
 use mux::tab::SplitRequest;
@@ -118,6 +118,11 @@ pub async fn spawn_command_internal(
                     .await
                     .context("split_pane")?;
                 pane.set_config(term_config);
+
+                // Equalize pane sizes after split if configured
+                if configuration().equalize_panes_on_split {
+                    tab.equalize_panes();
+                }
             } else {
                 bail!("there is no active tab while splitting pane!?");
             }

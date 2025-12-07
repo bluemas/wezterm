@@ -646,6 +646,12 @@ impl Tab {
         self.inner.lock().adjust_pane_size(direction, amount)
     }
 
+    /// Equalizes the sizes of all panes by distributing space equally
+    /// among sibling panes at each split level.
+    pub fn equalize_panes(&self) {
+        self.inner.lock().equalize_panes()
+    }
+
     /// Activate an adjacent pane in the specified direction.
     /// In cases where there are multiple adjacent panes in the
     /// intended direction, we take the pane that has the largest
@@ -1434,6 +1440,110 @@ impl TabInner {
                 }
             }
         }
+    }
+
+    fn equalize_panes(&mut self) {
+        log::info!("equalize_panes called");
+        if self.zoomed.is_some() {
+            log::info!("equalize_panes: zoomed, returning");
+            return;
+        }
+
+        let cell_dims = self.cell_dimensions();
+        log::info!("equalize_panes: cell_dims={:?}, size={:?}", cell_dims, self.size);
+
+        // Count horizontal leaf panes (panes that contribute to width)
+        fn count_horizontal_leaves(node: &Tree, direction: SplitDirection) -> usize {
+            match node {
+                Tree::Empty => 0,
+                Tree::Leaf(_) => 1,
+                Tree::Node { left, right, data } => {
+                    if let Some(split) = data {
+                        if split.direction == direction {
+                            // Same direction: sum of children
+                            count_horizontal_leaves(left, direction)
+                                + count_horizontal_leaves(right, direction)
+                        } else {
+                            // Different direction: max of children (they overlap)
+                            count_horizontal_leaves(left, direction)
+                                .max(count_horizontal_leaves(right, direction))
+                        }
+                    } else {
+                        1
+                    }
+                }
+            }
+        }
+
+        fn equalize_tree(node: &mut Tree, size: TerminalSize, cell_dims: &TerminalSize) {
+            if let Tree::Node { left, right, data } = node {
+                if let Some(split) = data {
+                    match split.direction {
+                        SplitDirection::Horizontal => {
+                            let left_leaves = count_horizontal_leaves(left, SplitDirection::Horizontal);
+                            let right_leaves = count_horizontal_leaves(right, SplitDirection::Horizontal);
+                            let total_leaves = left_leaves + right_leaves;
+
+                            // Number of dividers between horizontal panes
+                            let num_dividers = total_leaves.saturating_sub(1);
+                            let total_cols = size.cols.saturating_sub(num_dividers);
+
+                            let left_cols = (total_cols * left_leaves) / total_leaves;
+                            let right_cols = total_cols - left_cols;
+
+                            split.first.cols = left_cols;
+                            split.first.rows = size.rows;
+                            split.first.pixel_width = left_cols * cell_dims.pixel_width;
+                            split.first.pixel_height = size.rows * cell_dims.pixel_height;
+
+                            split.second.cols = right_cols;
+                            split.second.rows = size.rows;
+                            split.second.pixel_width = right_cols * cell_dims.pixel_width;
+                            split.second.pixel_height = size.rows * cell_dims.pixel_height;
+
+                            equalize_tree(left, split.first, cell_dims);
+                            equalize_tree(right, split.second, cell_dims);
+                        }
+                        SplitDirection::Vertical => {
+                            let top_leaves = count_horizontal_leaves(left, SplitDirection::Vertical);
+                            let bottom_leaves = count_horizontal_leaves(right, SplitDirection::Vertical);
+                            let total_leaves = top_leaves + bottom_leaves;
+
+                            let num_dividers = total_leaves.saturating_sub(1);
+                            let total_rows = size.rows.saturating_sub(num_dividers);
+
+                            let top_rows = (total_rows * top_leaves) / total_leaves;
+                            let bottom_rows = total_rows - top_rows;
+
+                            split.first.cols = size.cols;
+                            split.first.rows = top_rows;
+                            split.first.pixel_width = size.cols * cell_dims.pixel_width;
+                            split.first.pixel_height = top_rows * cell_dims.pixel_height;
+
+                            split.second.cols = size.cols;
+                            split.second.rows = bottom_rows;
+                            split.second.pixel_width = size.cols * cell_dims.pixel_width;
+                            split.second.pixel_height = bottom_rows * cell_dims.pixel_height;
+
+                            equalize_tree(left, split.first, cell_dims);
+                            equalize_tree(right, split.second, cell_dims);
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Some(ref mut tree) = self.pane {
+            log::info!("equalize_panes: tree exists, calling equalize_tree");
+            equalize_tree(tree, self.size, &cell_dims);
+            log::info!("equalize_panes: calling apply_sizes_from_splits");
+            apply_sizes_from_splits(tree, &self.size);
+            log::info!("equalize_panes: done");
+        } else {
+            log::info!("equalize_panes: no tree!");
+        }
+
+        Mux::try_get().map(|mux| mux.notify(MuxNotification::TabResized(self.id)));
     }
 
     fn activate_pane_direction(&mut self, direction: PaneDirection) {

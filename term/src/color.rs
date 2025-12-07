@@ -56,6 +56,7 @@ pub struct ColorPalette {
     pub selection_bg: SrgbaTuple,
     pub scrollbar_thumb: SrgbaTuple,
     pub split: SrgbaTuple,
+    pub split_active: SrgbaTuple,
 }
 
 impl fmt::Debug for Palette256 {
@@ -176,6 +177,7 @@ impl ColorPalette {
 
         let scrollbar_thumb = RgbColor::new_8bpc(0x22, 0x22, 0x22).into();
         let split = RgbColor::new_8bpc(0x44, 0x44, 0x44).into();
+        let split_active = RgbColor::new_8bpc(0x00, 0xaa, 0xff).into();
 
         ColorPalette {
             colors: Palette256(colors),
@@ -188,6 +190,7 @@ impl ColorPalette {
             selection_bg,
             scrollbar_thumb,
             split,
+            split_active,
         }
     }
 }

@@ -2957,6 +2957,21 @@ impl TermWindow {
                     tab.adjust_pane_size(*direction, *amount);
                 }
             }
+            EqualizePanes => {
+                log::info!("EqualizePanes key assignment triggered");
+                let mux = Mux::get();
+                let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
+                    Some(tab) => tab,
+                    None => return Ok(PerformAssignmentResult::Handled),
+                };
+
+                let tab_id = tab.tab_id();
+
+                if self.tab_state(tab_id).overlay.is_none() {
+                    log::info!("Calling tab.equalize_panes()");
+                    tab.equalize_panes();
+                }
+            }
             ActivatePaneByIndex(index) => {
                 let mux = Mux::get();
                 let tab = match mux.get_active_tab_for_window(self.mux_window_id) {
