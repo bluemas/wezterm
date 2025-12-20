@@ -2019,6 +2019,14 @@ pub fn derive_command_from_key_assignment(action: &KeyAssignment) -> Option<Comm
             menubar: &["Edit"],
             icon: None,
         },
+        OpenSettings => CommandDef {
+            brief: "Open Settings".into(),
+            doc: "Opens the settings window to configure WezTerm".into(),
+            keys: vec![(Modifiers::SUPER, ",".into())],
+            args: &[ArgType::ActiveWindow],
+            menubar: &["WezTerm"],
+            icon: Some("md_cog"),
+        },
     })
 }
 
@@ -2028,6 +2036,7 @@ fn compute_default_actions() -> Vec<KeyAssignment> {
     // These are ordered by their position within the various menus
     return vec![
         // ----------------- WezTerm
+        OpenSettings,
         ReloadConfiguration,
         #[cfg(target_os = "macos")]
         HideApplication,

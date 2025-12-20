@@ -641,6 +641,7 @@ pub enum KeyAssignment {
     ResetTerminal,
     OpenUri(String),
     ActivateCommandPalette,
+    OpenSettings,
     ActivateWindow(usize),
     ActivateWindowRelative(isize),
     ActivateWindowRelativeNoWrap(isize),
