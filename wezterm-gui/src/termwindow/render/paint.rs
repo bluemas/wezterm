@@ -271,6 +271,16 @@ impl crate::TermWindow {
             }
         }
 
+        // Draw CWD overlays on panes
+        drop(layers);
+        self.paint_pane_cwd_overlays()
+            .context("paint_pane_cwd_overlays")?;
+        let gl_state = self.render_state.as_ref().unwrap();
+        let layer = gl_state
+            .layer_for_zindex(0)
+            .context("layer_for_zindex(0) after cwd overlays")?;
+        let mut layers = layer.quad_allocator();
+
         if self.show_tab_bar {
             self.paint_tab_bar(&mut layers).context("paint_tab_bar")?;
         }
