@@ -153,6 +153,15 @@ pub enum TermWindowNotif {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SettingsUIAction {
+    SelectPanel(String),
+    ToggleOption(String),
+    SaveButton,
+    CancelButton,
+    SliderChange(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UIItemType {
     TabBar(TabBarItem),
     CloseTab(usize),
@@ -160,6 +169,7 @@ pub enum UIItemType {
     ScrollThumb,
     BelowScrollThumb,
     Split(PositionedSplit),
+    Settings(SettingsUIAction),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

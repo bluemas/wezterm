@@ -2,7 +2,7 @@ use crate::termwindow::box_model::*;
 use crate::termwindow::render::TripleLayerQuadAllocator;
 use crate::termwindow::{UIItem, UIItemType};
 use crate::utilsprites::RenderMetrics;
-use config::{Dimension, DimensionContext};
+use config::{Dimension, DimensionContext, FontAttributes, FontWeight, TextStyle};
 use mux::pane::{CachePolicy, Pane};
 use mux::tab::{PositionedPane, PositionedSplit, SplitDirection};
 use std::sync::Arc;
@@ -191,10 +191,24 @@ impl crate::TermWindow {
             return Ok(());
         }
 
+        // Create bold font style for CWD display
+        let config = self.config.clone();
+        let bold_style = TextStyle {
+            foreground: None,
+            font: config
+                .font
+                .font
+                .iter()
+                .map(|f| FontAttributes {
+                    weight: FontWeight::BOLD,
+                    ..f.clone()
+                })
+                .collect(),
+        };
         let font = self
             .fonts
-            .default_font()
-            .expect("to resolve default font");
+            .resolve_font(&bold_style)
+            .expect("to resolve bold font");
         let metrics = RenderMetrics::with_font_metrics(&font.metrics());
 
         let top_bar_height = if self.show_tab_bar && !self.config.tab_bar_at_bottom {
@@ -212,7 +226,7 @@ impl crate::TermWindow {
         // White background color for the header row
         let white_bg = window::color::LinearRgba::with_components(1.0, 1.0, 1.0, 1.0);
         // Dark text color for contrast
-        let dark_text = window::color::LinearRgba::with_components(0.1, 0.1, 0.1, 1.0);
+        let dark_text = window::color::LinearRgba::with_components(0.0, 0.0, 0.0, 1.0);
 
         for pos in &panes {
             // Calculate pane position

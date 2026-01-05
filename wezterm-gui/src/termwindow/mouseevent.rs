@@ -1,6 +1,7 @@
 use crate::tabbar::TabBarItem;
 use crate::termwindow::{
-    GuiWin, MouseCapture, PositionedSplit, ScrollHit, TermWindowNotif, UIItem, UIItemType, TMB,
+    GuiWin, MouseCapture, PositionedSplit, ScrollHit, SettingsUIAction, TermWindowNotif, UIItem,
+    UIItemType, TMB,
 };
 use ::window::{
     MouseButtons as WMB, MouseCursor, MouseEvent, MouseEventKind as WMEK, MousePress,
@@ -43,7 +44,8 @@ impl super::TermWindow {
             | UIItemType::AboveScrollThumb
             | UIItemType::BelowScrollThumb
             | UIItemType::ScrollThumb
-            | UIItemType::Split(_) => {}
+            | UIItemType::Split(_)
+            | UIItemType::Settings(_) => {}
         }
     }
 
@@ -54,7 +56,8 @@ impl super::TermWindow {
             | UIItemType::AboveScrollThumb
             | UIItemType::BelowScrollThumb
             | UIItemType::ScrollThumb
-            | UIItemType::Split(_) => {}
+            | UIItemType::Split(_)
+            | UIItemType::Settings(_) => {}
         }
     }
 
@@ -382,6 +385,65 @@ impl super::TermWindow {
             UIItemType::CloseTab(idx) => {
                 self.mouse_event_close_tab(idx, event, context);
             }
+            UIItemType::Settings(action) => {
+                self.mouse_event_settings(action, event, context);
+            }
+        }
+    }
+
+    pub fn mouse_event_settings(
+        &mut self,
+        action: SettingsUIAction,
+        event: MouseEvent,
+        context: &dyn WindowOps,
+    ) {
+        context.set_cursor(Some(MouseCursor::Arrow));
+        match event.kind {
+            WMEK::Press(MousePress::Left) => {
+                self.handle_settings_action(action);
+            }
+            _ => {}
+        }
+    }
+
+    fn handle_settings_action(&mut self, action: SettingsUIAction) {
+        use crate::termwindow::settings::SettingsModal;
+
+        let modal = match self.modal.borrow().as_ref() {
+            Some(modal) => modal.clone(),
+            None => return,
+        };
+
+        // Try to downcast to SettingsModal
+        if let Some(settings_modal) = modal.downcast_ref::<SettingsModal>() {
+            match action {
+                SettingsUIAction::SelectPanel(panel_name) => {
+                    use crate::termwindow::settings::SettingsPanel;
+                    let panel = match panel_name.as_str() {
+                        "Startup Layout" => SettingsPanel::StartupLayout,
+                        "Appearance" => SettingsPanel::Appearance,
+                        "Tab Bar" => SettingsPanel::TabBar,
+                        "Keybindings" => SettingsPanel::Keybindings,
+                        _ => return,
+                    };
+                    settings_modal.set_panel(panel);
+                    self.invalidate_modal();
+                }
+                SettingsUIAction::ToggleOption(option_name) => {
+                    settings_modal.toggle_option(&option_name);
+                    self.invalidate_modal();
+                }
+                SettingsUIAction::SaveButton => {
+                    settings_modal.save_current(self);
+                    self.invalidate_modal();
+                }
+                SettingsUIAction::CancelButton => {
+                    self.cancel_modal();
+                }
+                SettingsUIAction::SliderChange(_) => {
+                    // Not implemented yet
+                }
+            }
         }
     }
 
@@ -684,6 +746,7 @@ impl super::TermWindow {
 
                             pane = Arc::clone(&pos.pane);
                             is_click_to_focus_pane = true;
+                            context.invalidate();
                         }
                         WMEK::Move => {
                             if self.config.pane_focus_follows_mouse {
