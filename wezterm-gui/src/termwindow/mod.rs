@@ -3567,6 +3567,18 @@ impl TermWindow {
         self.get_pos_panes_for_tab(&tab)
     }
 
+    /// Returns the number of rows to offset for the CWD header overlay.
+    /// When multiple panes are visible, returns 1 (for the CWD header row).
+    /// Otherwise returns 0.
+    pub fn cwd_row_offset(&self) -> usize {
+        let panes = self.get_panes_to_render();
+        if panes.len() > 1 {
+            1
+        } else {
+            0
+        }
+    }
+
     /// if pane_id.is_none(), removes any overlay for the specified tab.
     /// Otherwise: if the overlay is the specified pane for that tab, remove it.
     fn cancel_overlay_for_tab(&mut self, tab_id: TabId, pane_id: Option<PaneId>) {

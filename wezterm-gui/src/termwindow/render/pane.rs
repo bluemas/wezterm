@@ -335,11 +335,14 @@ impl crate::TermWindow {
                 window_is_transparent: bool,
                 layers: &'a mut TripleLayerQuadAllocator<'b>,
                 error: Option<anyhow::Error>,
+                cwd_row_offset: usize,
             }
 
             let left_pixel_x = padding_left
                 + border.left.get() as f32
                 + (pos.left as f32 * self.render_metrics.cell_size.width as f32);
+
+            let cwd_row_offset = self.cwd_row_offset();
 
             let mut render = LineRender {
                 term_window: self,
@@ -365,6 +368,7 @@ impl crate::TermWindow {
                 window_is_transparent,
                 layers,
                 error: None,
+                cwd_row_offset,
             };
 
             impl<'a, 'b> LineRender<'a, 'b> {
@@ -435,7 +439,7 @@ impl crate::TermWindow {
                         cursor,
                         shape_hash,
                         top_pixel_y: NotNan::new(self.top_pixel_y).unwrap()
-                            + (line_idx + self.pos.top) as f32
+                            + (line_idx + self.pos.top + self.cwd_row_offset) as f32
                                 * self.term_window.render_metrics.cell_size.height as f32,
                         left_pixel_x: NotNan::new(self.left_pixel_x).unwrap(),
                         phys_line_idx: line_idx,

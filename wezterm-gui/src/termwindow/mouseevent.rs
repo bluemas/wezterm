@@ -729,7 +729,10 @@ impl super::TermWindow {
             Some(MouseCapture::TerminalPane(_))
         );
 
-        for pos in self.get_panes_to_render() {
+        let panes = self.get_panes_to_render();
+        let cwd_row_offset = if panes.len() > 1 { 1i64 } else { 0i64 };
+
+        for pos in panes {
             if !is_already_captured
                 && row >= pos.top as i64
                 && row <= (pos.top + pos.height) as i64
@@ -768,11 +771,11 @@ impl super::TermWindow {
                     }
                 }
                 column = column.saturating_sub(pos.left);
-                row = row.saturating_sub(pos.top as i64);
+                row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset);
                 break;
             } else if is_already_captured && pane.pane_id() == pos.pane.pane_id() {
                 column = column.saturating_sub(pos.left);
-                row = row.saturating_sub(pos.top as i64).max(0);
+                row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset).max(0);
 
                 if position.column < pos.left {
                     x_pixel_offset -= self.render_metrics.cell_size.width

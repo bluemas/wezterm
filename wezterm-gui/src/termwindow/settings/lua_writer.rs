@@ -217,6 +217,11 @@ impl LuaConfigWriter {
         new_content = self.remove_gui_settings_section(&new_content, "Appearance");
         new_content = self.remove_gui_settings_section(&new_content, "Tab Bar");
 
+        // Remove any existing gui-startup handler (including non-GUI-Settings ones)
+        if startup_layout.is_some() {
+            new_content = self.remove_existing_gui_startup(&new_content);
+        }
+
         // Find the return statement and insert before it
         let return_pos = new_content.rfind("return config").or_else(|| new_content.rfind("return {"));
 
@@ -288,6 +293,98 @@ impl LuaConfigWriter {
         }
 
         result
+    }
+
+    /// Remove existing gui-startup event handler from content
+    fn remove_existing_gui_startup(&self, content: &str) -> String {
+        let mut result = String::new();
+        let mut in_gui_startup = false;
+        let mut brace_depth = 0;
+        let mut paren_depth = 0;
+        let lines: Vec<&str> = content.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            let line = lines[i];
+
+            // Check if this line starts a gui-startup handler
+            if !in_gui_startup
+                && (line.contains("wezterm.on('gui-startup'")
+                    || line.contains("wezterm.on(\"gui-startup\""))
+            {
+                in_gui_startup = true;
+                // Count opening braces/parens on this line
+                for ch in line.chars() {
+                    match ch {
+                        '(' => paren_depth += 1,
+                        ')' => paren_depth -= 1,
+                        '{' => brace_depth += 1,
+                        '}' => brace_depth -= 1,
+                        _ => {}
+                    }
+                }
+                // Skip comment line before gui-startup if it's a description
+                if i > 0 && lines[i - 1].starts_with("--") && !lines[i - 1].starts_with("-- GUI Settings:") {
+                    // Remove the previous comment line too
+                    if result.ends_with('\n') {
+                        // Check if last line in result is the comment
+                        let result_lines: Vec<&str> = result.lines().collect();
+                        if let Some(last) = result_lines.last() {
+                            if last.starts_with("--") {
+                                // Remove last line
+                                result = result_lines[..result_lines.len() - 1].join("\n");
+                                if !result.is_empty() {
+                                    result.push('\n');
+                                }
+                            }
+                        }
+                    }
+                }
+                i += 1;
+                continue;
+            }
+
+            if in_gui_startup {
+                // Track nested braces and parens
+                for ch in line.chars() {
+                    match ch {
+                        '(' => paren_depth += 1,
+                        ')' => paren_depth -= 1,
+                        '{' => brace_depth += 1,
+                        '}' => brace_depth -= 1,
+                        _ => {}
+                    }
+                }
+
+                // Check if we've closed all braces/parens (handler ended)
+                if paren_depth <= 0 && brace_depth <= 0 {
+                    in_gui_startup = false;
+                    brace_depth = 0;
+                    paren_depth = 0;
+                }
+                i += 1;
+                continue;
+            }
+
+            result.push_str(line);
+            result.push('\n');
+            i += 1;
+        }
+
+        // Clean up multiple consecutive blank lines
+        let mut cleaned = String::new();
+        let mut prev_blank = false;
+        for line in result.lines() {
+            let is_blank = line.trim().is_empty();
+            if is_blank && prev_blank {
+                continue;
+            }
+            cleaned.push_str(line);
+            cleaned.push('\n');
+            prev_blank = is_blank;
+        }
+
+        cleaned
     }
 
     fn default_config_template(&self) -> String {
