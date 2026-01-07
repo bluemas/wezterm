@@ -56,9 +56,142 @@ pub struct SettingsModal {
 
 impl SettingsModal {
     pub fn new(term_window: &TermWindow) -> Self {
+        let mut state = SettingsState::new(term_window);
+
+        // Load current pane layout as the "saved" layout
+        // (since gui-startup created these panes, they represent the saved config)
+        Self::populate_startup_layout_from_window(&mut state, term_window);
+
         Self {
             element: RefCell::new(None),
-            state: RefCell::new(SettingsState::new(term_window)),
+            state: RefCell::new(state),
+        }
+    }
+
+    fn populate_startup_layout_from_window(state: &mut SettingsState, term_window: &TermWindow) {
+        use mux::Mux;
+        use std::collections::BTreeSet;
+
+        #[derive(Clone)]
+        struct PaneInfo {
+            left: usize,
+            top: usize,
+            width: usize,
+            height: usize,
+            cwd: Option<std::path::PathBuf>,
+        }
+
+        let mut pane_infos: Vec<PaneInfo> = vec![];
+
+        // Collect pane info - use explicit drops to avoid borrow issues
+        let mux = Mux::get();
+        let window_id = term_window.mux_window_id;
+
+        let mux_window = match mux.get_window(window_id) {
+            Some(w) => w,
+            None => return,
+        };
+        let tab = match mux_window.get_active() {
+            Some(t) => t,
+            None => return,
+        };
+        let panes = tab.iter_panes_ignoring_zoom();
+
+        for pos in panes.iter() {
+            let pane = &pos.pane;
+            let cwd = pane
+                .get_current_working_dir(mux::pane::CachePolicy::FetchImmediate)
+                .and_then(|url| {
+                    if url.scheme() == "file" {
+                        Some(std::path::PathBuf::from(url.path()))
+                    } else {
+                        None
+                    }
+                });
+
+            pane_infos.push(PaneInfo {
+                left: pos.left,
+                top: pos.top,
+                width: pos.width,
+                height: pos.height,
+                cwd,
+            });
+        }
+
+        // Drop the borrows before processing
+        drop(panes);
+        drop(tab);
+        drop(mux_window);
+
+        if pane_infos.is_empty() {
+            return;
+        }
+
+        // Sort by position
+        pane_infos.sort_by(|a, b| {
+            if a.top != b.top {
+                a.top.cmp(&b.top)
+            } else {
+                a.left.cmp(&b.left)
+            }
+        });
+
+        // Populate panes
+        state.startup_layout.panes.clear();
+        state.startup_layout.splits.clear();
+
+        for (idx, info) in pane_infos.iter().enumerate() {
+            state.startup_layout.panes.push(state::PaneConfig {
+                id: idx,
+                cwd: info.cwd.clone(),
+                command: None,
+                name: Some(format!("Pane {}", idx + 1)),
+            });
+        }
+
+        // Calculate splits (simplified - just for display purposes)
+        if pane_infos.len() > 1 {
+            let unique_tops: BTreeSet<usize> = pane_infos.iter().map(|p| p.top).collect();
+            let unique_lefts: BTreeSet<usize> = pane_infos.iter().map(|p| p.left).collect();
+            let num_rows = unique_tops.len();
+            let num_cols = unique_lefts.len();
+            let is_grid = pane_infos.len() == num_rows * num_cols && num_rows > 1 && num_cols > 1;
+
+            if is_grid {
+                let tops_vec: Vec<usize> = unique_tops.into_iter().collect();
+                let lefts_vec: Vec<usize> = unique_lefts.into_iter().collect();
+
+                let mut grid: Vec<Vec<Option<usize>>> = vec![vec![None; num_cols]; num_rows];
+                for (pane_idx, info) in pane_infos.iter().enumerate() {
+                    let row = tops_vec.iter().position(|&t| t == info.top).unwrap();
+                    let col = lefts_vec.iter().position(|&l| l == info.left).unwrap();
+                    grid[row][col] = Some(pane_idx);
+                }
+
+                for col in 1..num_cols {
+                    if let (Some(src_idx), Some(dst_idx)) = (grid[0][col - 1], grid[0][col]) {
+                        state.startup_layout.splits.push(state::SplitConfig {
+                            direction: state::SplitDirection::Horizontal,
+                            ratio: 0.5,
+                            first_pane: src_idx,
+                            second_pane: dst_idx,
+                        });
+                    }
+                }
+
+                for row in 1..num_rows {
+                    for col in 0..num_cols {
+                        if let (Some(src_idx), Some(dst_idx)) = (grid[row - 1][col], grid[row][col]) {
+                            state.startup_layout.splits.push(state::SplitConfig {
+                                direction: state::SplitDirection::Vertical,
+                                ratio: 0.5,
+                                first_pane: src_idx,
+                                second_pane: dst_idx,
+                            });
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -202,12 +335,12 @@ impl SettingsModal {
         };
 
         // Get current panes from window (for live display)
-        // (idx, cwd, left, top, width, height)
-        let current_panes_info: Vec<(usize, Option<String>, usize, usize, usize, usize)> = {
+        // (idx, cwd, left, top, width, height, pane_id)
+        let current_panes_info: Vec<(usize, Option<String>, usize, usize, usize, usize, mux::pane::PaneId)> = {
             use mux::Mux;
             let mux = Mux::get();
             let window_id = term_window.mux_window_id;
-            let result: Vec<(usize, Option<String>, usize, usize, usize, usize)> = if let Some(mux_window) = mux.get_window(window_id) {
+            let result: Vec<(usize, Option<String>, usize, usize, usize, usize, mux::pane::PaneId)> = if let Some(mux_window) = mux.get_window(window_id) {
                 if let Some(tab) = mux_window.get_active() {
                     tab.iter_panes_ignoring_zoom()
                         .iter()
@@ -222,7 +355,8 @@ impl SettingsModal {
                                         Some(url.to_string())
                                     }
                                 });
-                            (idx, cwd, pos.left, pos.top, pos.width, pos.height)
+                            let pane_id = pos.pane.pane_id();
+                            (idx, cwd, pos.left, pos.top, pos.width, pos.height, pane_id)
                         })
                         .collect()
                 } else {
@@ -246,11 +380,11 @@ impl SettingsModal {
                 if current_panes_info.is_empty() {
                     lines.push(make_line("  (No panes)", &font, bg.clone(), fg.clone()));
                 } else {
-                    for (idx, (_, cwd, left, top, width, height)) in current_panes_info.iter().enumerate() {
+                    for (idx, (_, cwd, left, top, width, height, pane_id)) in current_panes_info.iter().enumerate() {
                         let cwd_str = cwd.as_deref().unwrap_or("(unknown)");
                         let pos_info = format!("pos:({},{}) size:{}x{}", left, top, width, height);
                         lines.push(make_line(
-                            &format!("  Pane {}: {} [{}]", idx + 1, cwd_str, pos_info),
+                            &format!("  Pane {} (id:{}): {} [{}]", idx + 1, pane_id, cwd_str, pos_info),
                             &font, bg.clone(), fg.clone()
                         ));
                     }
@@ -890,6 +1024,7 @@ impl SettingsModal {
 
     fn save_current_layout(&self, term_window: &mut TermWindow) {
         use mux::Mux;
+        #[allow(unused_imports)]
         use mux::tab::SplitDirection;
 
         let mux = Mux::get();
@@ -962,40 +1097,101 @@ impl SettingsModal {
                 }
 
                 // Calculate splits based on pane positions
+                // Detect grid layout and generate appropriate split commands
                 if pane_infos.len() > 1 {
-                    let first = &pane_infos[0];
-                    let total_width = pane_infos.iter().map(|p| p.left + p.width).max().unwrap_or(first.width);
-                    let total_height = pane_infos.iter().map(|p| p.top + p.height).max().unwrap_or(first.height);
+                    use std::collections::BTreeSet;
 
-                    for (new_idx, info) in pane_infos.iter().enumerate().skip(1) {
-                        let prev = &pane_infos[new_idx - 1];
+                    // Detect grid layout
+                    let unique_tops: BTreeSet<usize> = pane_infos.iter().map(|p| p.top).collect();
+                    let unique_lefts: BTreeSet<usize> = pane_infos.iter().map(|p| p.left).collect();
+                    let num_rows = unique_tops.len();
+                    let num_cols = unique_lefts.len();
+                    let is_grid = pane_infos.len() == num_rows * num_cols && num_rows > 1 && num_cols > 1;
 
-                        // Determine split direction
-                        let (direction, ratio) = if info.top == prev.top {
-                            // Same row -> Right split
-                            let ratio = info.width as f32 / (info.width + prev.width) as f32;
-                            (state::SplitDirection::Horizontal, ratio)
-                        } else if info.left == prev.left {
-                            // Same column -> Bottom split
-                            let ratio = info.height as f32 / (info.height + prev.height) as f32;
-                            (state::SplitDirection::Vertical, ratio)
-                        } else {
-                            // Complex layout - estimate based on position
-                            if info.left > prev.left + prev.width / 2 {
-                                let ratio = info.width as f32 / total_width as f32;
-                                (state::SplitDirection::Horizontal, ratio)
-                            } else {
-                                let ratio = info.height as f32 / total_height as f32;
-                                (state::SplitDirection::Vertical, ratio)
+                    if is_grid {
+                        // Grid layout: Generate splits row by row
+                        // For a 4x2 grid, we need:
+                        // 1. First row: Right splits (pane0 -> pane1 -> pane2 -> pane3)
+                        // 2. Second row: Bottom splits from corresponding top panes
+
+                        let tops_vec: Vec<usize> = unique_tops.into_iter().collect();
+                        let lefts_vec: Vec<usize> = unique_lefts.into_iter().collect();
+
+                        // Create a grid mapping: grid[row][col] = pane_idx
+                        let mut grid: Vec<Vec<Option<usize>>> = vec![vec![None; num_cols]; num_rows];
+                        for (pane_idx, info) in pane_infos.iter().enumerate() {
+                            let row = tops_vec.iter().position(|&t| t == info.top).unwrap();
+                            let col = lefts_vec.iter().position(|&l| l == info.left).unwrap();
+                            grid[row][col] = Some(pane_idx);
+                        }
+
+                        // Generate splits for first row (Right splits)
+                        // For equal-width columns, we use 0.5 ratio (new pane takes half)
+                        for col in 1..num_cols {
+                            if let (Some(src_idx), Some(dst_idx)) = (grid[0][col - 1], grid[0][col]) {
+                                state.startup_layout.splits.push(state::SplitConfig {
+                                    direction: state::SplitDirection::Horizontal,
+                                    ratio: 0.5,
+                                    first_pane: src_idx,
+                                    second_pane: dst_idx,
+                                });
                             }
-                        };
+                        }
 
-                        state.startup_layout.splits.push(state::SplitConfig {
-                            direction,
-                            ratio,
-                            first_pane: new_idx - 1,
-                            second_pane: new_idx,
-                        });
+                        // Generate splits for subsequent rows (Bottom splits from top row)
+                        for row in 1..num_rows {
+                            for col in 0..num_cols {
+                                if let (Some(src_idx), Some(dst_idx)) = (grid[row - 1][col], grid[row][col]) {
+                                    state.startup_layout.splits.push(state::SplitConfig {
+                                        direction: state::SplitDirection::Vertical,
+                                        ratio: 0.5,
+                                        first_pane: src_idx,
+                                        second_pane: dst_idx,
+                                    });
+                                }
+                            }
+                        }
+                    } else {
+                        // Non-grid layout: Use position-based algorithm
+                        // Priority: 1) Pane directly above (Bottom split)
+                        //           2) Pane immediately to left (Right split)
+                        for (new_idx, info) in pane_infos.iter().enumerate().skip(1) {
+                            let mut best_source: Option<(usize, state::SplitDirection, f32)> = None;
+
+                            // First priority: Look for pane directly above (same left position)
+                            for (src_idx, src) in pane_infos.iter().enumerate().take(new_idx) {
+                                if src.left == info.left && src.top + src.height == info.top {
+                                    let combined_height = src.height + info.height;
+                                    let ratio = info.height as f32 / combined_height as f32;
+                                    best_source = Some((src_idx, state::SplitDirection::Vertical, ratio));
+                                    break;
+                                }
+                            }
+
+                            // Second priority: Look for pane immediately to the left (same row)
+                            if best_source.is_none() {
+                                for (src_idx, src) in pane_infos.iter().enumerate().take(new_idx) {
+                                    if src.top == info.top && src.left + src.width == info.left {
+                                        let combined_width = src.width + info.width;
+                                        let ratio = info.width as f32 / combined_width as f32;
+                                        best_source = Some((src_idx, state::SplitDirection::Horizontal, ratio));
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // Fallback: use previous pane with Right split
+                            let (first_pane, direction, ratio) = best_source.unwrap_or_else(|| {
+                                (new_idx - 1, state::SplitDirection::Horizontal, 0.5)
+                            });
+
+                            state.startup_layout.splits.push(state::SplitConfig {
+                                direction,
+                                ratio,
+                                first_pane,
+                                second_pane: new_idx,
+                            });
+                        }
                     }
                 }
             }

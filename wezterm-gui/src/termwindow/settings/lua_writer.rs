@@ -78,9 +78,15 @@ impl LuaConfigWriter {
                 };
 
                 let var_name = format!("pane{}", idx + 2);
+                // Use the correct source pane for splitting
+                let source_pane = if split.first_pane == 0 {
+                    "pane".to_string()
+                } else {
+                    format!("pane{}", split.first_pane + 1)
+                };
                 lua.push_str(&format!(
-                    "    local {} = pane:split({{\n",
-                    var_name
+                    "    local {} = {}:split({{\n",
+                    var_name, source_pane
                 ));
                 lua.push_str(&format!("        direction = \"{}\",\n", direction));
                 lua.push_str(&format!("        size = {},\n", split.ratio));
@@ -101,6 +107,17 @@ impl LuaConfigWriter {
 
                 lua.push_str("    })\n");
             }
+        }
+
+        // Add EqualizePanes call for grid layouts (more than 2 panes)
+        if layout.panes.len() > 2 {
+            lua.push_str("\n    -- Equalize pane sizes after creation\n");
+            lua.push_str("    wezterm.time.call_after(0.3, function()\n");
+            lua.push_str("        local gui_window = window:gui_window()\n");
+            lua.push_str("        if gui_window then\n");
+            lua.push_str("            gui_window:perform_action(wezterm.action.EqualizePanes, pane)\n");
+            lua.push_str("        end\n");
+            lua.push_str("    end)\n");
         }
 
         lua.push_str("end)\n");
@@ -212,15 +229,16 @@ impl LuaConfigWriter {
         // Generate new content
         let mut new_content = existing;
 
-        // Remove old GUI Settings sections
-        new_content = self.remove_gui_settings_section(&new_content, "Startup Layout");
-        new_content = self.remove_gui_settings_section(&new_content, "Appearance");
-        new_content = self.remove_gui_settings_section(&new_content, "Tab Bar");
-
-        // Remove any existing gui-startup handler (including non-GUI-Settings ones)
+        // IMPORTANT: Remove gui-startup handler FIRST before removing GUI Settings sections
+        // This prevents partial removal that leaves orphaned `end)` behind
         if startup_layout.is_some() {
             new_content = self.remove_existing_gui_startup(&new_content);
         }
+
+        // Remove old GUI Settings sections (comments and related config lines)
+        new_content = self.remove_gui_settings_section(&new_content, "Startup Layout");
+        new_content = self.remove_gui_settings_section(&new_content, "Appearance");
+        new_content = self.remove_gui_settings_section(&new_content, "Tab Bar");
 
         // Find the return statement and insert before it
         let return_pos = new_content.rfind("return config").or_else(|| new_content.rfind("return {"));

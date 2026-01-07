@@ -44,7 +44,7 @@ pub struct StartupLayout {
 impl Default for StartupLayout {
     fn default() -> Self {
         Self {
-            panes: vec![PaneConfig::default()],
+            panes: vec![],  // Empty by default - will be populated by Save Layout
             splits: vec![],
         }
     }
