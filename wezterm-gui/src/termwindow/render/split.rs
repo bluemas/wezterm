@@ -8,14 +8,20 @@ use mux::tab::{PositionedPane, PositionedSplit, SplitDirection};
 use std::sync::Arc;
 
 impl crate::TermWindow {
-    pub fn paint_active_pane_border(
+    pub fn paint_pane_border(
         &mut self,
         layers: &mut TripleLayerQuadAllocator,
-        active_pane: &PositionedPane,
+        positioned_pane: &PositionedPane,
         pane: &Arc<dyn Pane>,
+        is_active: bool,
     ) -> anyhow::Result<()> {
         let palette = pane.palette();
-        let border_color = palette.split_active.to_linear();
+        // Use split_active color for active pane, split color for inactive
+        let border_color = if is_active {
+            palette.split_active.to_linear()
+        } else {
+            palette.split.to_linear()
+        };
 
         let cell_width = self.render_metrics.cell_size.width as f32;
         let cell_height = self.render_metrics.cell_size.height as f32;
@@ -29,80 +35,71 @@ impl crate::TermWindow {
 
         let (padding_left, padding_top) = self.padding_left_top();
 
-        let pane_left = active_pane.left;
-        let pane_right = active_pane.left + active_pane.width;
-        let pane_top = active_pane.top;
-        let pane_bottom = active_pane.top + active_pane.height;
+        let pane_left = positioned_pane.left;
+        let pane_top = positioned_pane.top;
 
-        // Calculate pixel positions
+        // Calculate pixel positions using cell-based dimensions for accuracy
         let left_px = pane_left as f32 * cell_width + padding_left + border.left.get() as f32;
-        let right_px = pane_right as f32 * cell_width + padding_left + border.left.get() as f32;
         let top_px = pane_top as f32 * cell_height + first_row_offset + padding_top;
-        let bottom_px = pane_bottom as f32 * cell_height + first_row_offset + padding_top;
+
+        // Use cell-based width to match split line positions exactly
+        let pane_cell_width = positioned_pane.width as f32 * cell_width;
 
         let line_width = self.render_metrics.underline_height as f32;
 
         // Minimum Y position for borders (below tab bar)
         let min_y = first_row_offset + padding_top;
 
-        // Draw top border (clamp to visible area)
-        let top_border_y = (top_px - (cell_height / 2.0)).max(min_y);
-        self.filled_rectangle(
-            layers,
-            2,
-            euclid::rect(
-                left_px - (cell_width / 2.0),
-                top_border_y,
-                (pane_right - pane_left) as f32 * cell_width + cell_width,
-                line_width,
-            ),
-            border_color,
-        )?;
-
-        // Draw bottom border
-        self.filled_rectangle(
-            layers,
-            2,
-            euclid::rect(
-                left_px - (cell_width / 2.0),
-                bottom_px + (cell_height / 2.0),
-                (pane_right - pane_left) as f32 * cell_width + cell_width,
-                line_width,
-            ),
-            border_color,
-        )?;
-
-        // Calculate adjusted height for left/right borders when top is clamped
+        // Extend borders by cell_width/2 and cell_height/2 to overlap split lines
+        let border_left_x = left_px - (cell_width / 2.0);
+        let border_right_x = left_px + pane_cell_width + (cell_width / 2.0);
         let border_top_y = (top_px - (cell_height / 2.0)).max(min_y);
-        let border_height = bottom_px + (cell_height / 2.0) - border_top_y + line_width;
+        let border_bottom_y = top_px + positioned_pane.height as f32 * cell_height + (cell_height / 2.0);
+        let border_width = pane_cell_width + cell_width;
+        let border_height = border_bottom_y - border_top_y + line_width;
 
-        // Draw left border
+        // Top border
         self.filled_rectangle(
             layers,
             2,
-            euclid::rect(
-                left_px - (cell_width / 2.0),
-                border_top_y,
-                line_width,
-                border_height,
-            ),
+            euclid::rect(border_left_x, border_top_y, border_width, line_width),
             border_color,
         )?;
 
-        // Draw right border
+        // Bottom border
         self.filled_rectangle(
             layers,
             2,
-            euclid::rect(
-                right_px + (cell_width / 2.0),
-                border_top_y,
-                line_width,
-                border_height,
-            ),
+            euclid::rect(border_left_x, border_bottom_y, border_width, line_width),
+            border_color,
+        )?;
+
+        // Left border
+        self.filled_rectangle(
+            layers,
+            2,
+            euclid::rect(border_left_x, border_top_y, line_width, border_height),
+            border_color,
+        )?;
+
+        // Right border
+        self.filled_rectangle(
+            layers,
+            2,
+            euclid::rect(border_right_x, border_top_y, line_width, border_height),
             border_color,
         )?;
 
         Ok(())
+    }
+
+    pub fn paint_active_pane_border(
+        &mut self,
+        layers: &mut TripleLayerQuadAllocator,
+        active_pane: &PositionedPane,
+        pane: &Arc<dyn Pane>,
+    ) -> anyhow::Result<()> {
+        self.paint_pane_border(layers, active_pane, pane, true)
     }
 
     pub fn paint_split(
@@ -156,6 +153,7 @@ impl crate::TermWindow {
                 item_type: UIItemType::Split(split.clone()),
             });
         } else {
+            // Vertical split - draw horizontal line between top and bottom panes
             self.filled_rectangle(
                 layers,
                 2,
@@ -229,7 +227,7 @@ impl crate::TermWindow {
         let dark_text = window::color::LinearRgba::with_components(0.0, 0.0, 0.0, 1.0);
 
         for pos in &panes {
-            // Calculate pane position
+            // Calculate pane position - CWD overlay covers the first row of each pane
             let pane_left_px = padding_left
                 + border.left.get() as f32
                 + pos.left as f32 * cell_width;

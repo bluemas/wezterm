@@ -303,9 +303,36 @@ impl crate::TermWindow {
             palette.cursor_fg == global_cursor_fg && palette.cursor_bg == global_cursor_bg;
 
         {
+            // Get cwd_row_offset - CWD header takes up this many visual rows
+            let cwd_offset = self.cwd_row_offset() as StableRowIndex;
+
+            // We can only display (viewport_rows - cwd_offset) rows due to CWD header
+            let displayable_rows = (dims.viewport_rows as StableRowIndex).saturating_sub(cwd_offset);
+
+            // Calculate the range of rows to render
+            // If cursor is near the bottom, adjust range to include cursor row
+            let cursor_row = cursor.y;
             let stable_range = match current_viewport {
-                Some(top) => top..top + dims.viewport_rows as StableRowIndex,
-                None => dims.physical_top..dims.physical_top + dims.viewport_rows as StableRowIndex,
+                Some(top) => {
+                    // Check if cursor would be outside the displayable range
+                    let range_end = top + displayable_rows;
+                    if cursor_row >= range_end && cursor_row < top + dims.viewport_rows as StableRowIndex {
+                        // Shift range to include cursor (scroll view down)
+                        let new_top = cursor_row - displayable_rows + 1;
+                        new_top..new_top + displayable_rows
+                    } else {
+                        top..range_end
+                    }
+                }
+                None => {
+                    let range_end = dims.physical_top + displayable_rows;
+                    if cursor_row >= range_end && cursor_row < dims.physical_top + dims.viewport_rows as StableRowIndex {
+                        let new_top = cursor_row - displayable_rows + 1;
+                        new_top..new_top + displayable_rows
+                    } else {
+                        dims.physical_top..range_end
+                    }
+                }
             };
 
             pos.pane
@@ -438,6 +465,8 @@ impl crate::TermWindow {
                         selection: selrange.clone(),
                         cursor,
                         shape_hash,
+                        // Add cwd_row_offset to shift content down, making room for CWD header
+                        // Since stable_range skips first cwd_row_offset rows, last row stays within pane
                         top_pixel_y: NotNan::new(self.top_pixel_y).unwrap()
                             + (line_idx + self.pos.top + self.cwd_row_offset) as f32
                                 * self.term_window.render_metrics.cell_size.height as f32,

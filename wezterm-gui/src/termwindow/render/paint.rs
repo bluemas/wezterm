@@ -259,19 +259,20 @@ impl crate::TermWindow {
 
         if let Some(pane) = self.get_active_pane_or_overlay() {
             let splits = self.get_splits();
-            let active_pane_pos = self.get_panes_to_render().into_iter().find(|p| p.is_active);
+            let all_panes = self.get_panes_to_render();
+            let active_pane_pos = all_panes.iter().find(|p| p.is_active);
             for split in &splits {
-                self.paint_split(&mut layers, split, &pane, active_pane_pos.as_ref())
+                self.paint_split(&mut layers, split, &pane, active_pane_pos)
                     .context("paint_split")?;
             }
-            // Draw active pane border
-            if let Some(ref active_pos) = active_pane_pos {
-                self.paint_active_pane_border(&mut layers, active_pos, &pane)
-                    .context("paint_active_pane_border")?;
+            // Draw border only for active pane
+            if let Some(active_pos) = all_panes.iter().find(|p| p.is_active) {
+                self.paint_pane_border(&mut layers, active_pos, &pane, true)
+                    .context("paint_pane_border")?;
             }
         }
 
-        // Draw CWD overlays on panes
+        // Draw CWD overlays on panes (covers first row with current directory)
         drop(layers);
         self.paint_pane_cwd_overlays()
             .context("paint_pane_cwd_overlays")?;
