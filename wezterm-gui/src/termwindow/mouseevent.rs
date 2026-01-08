@@ -730,7 +730,8 @@ impl super::TermWindow {
         );
 
         let panes = self.get_panes_to_render();
-        let cwd_row_offset = if panes.len() > 1 { 1i64 } else { 0i64 };
+        // Save pane count before iterating since panes is consumed
+        let pane_count = panes.len();
 
         for pos in panes {
             if !is_already_captured
@@ -770,10 +771,15 @@ impl super::TermWindow {
                         }
                     }
                 }
+                // Account for CWD header overlay when multiple panes are visible
+                // Content is rendered shifted down by 1 row, so visual row 1 = terminal row 0
+                let cwd_row_offset: i64 = if pane_count > 1 { 1 } else { 0 };
                 column = column.saturating_sub(pos.left);
-                row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset);
+                row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset).max(0);
                 break;
             } else if is_already_captured && pane.pane_id() == pos.pane.pane_id() {
+                // Account for CWD header overlay when multiple panes are visible
+                let cwd_row_offset: i64 = if pane_count > 1 { 1 } else { 0 };
                 column = column.saturating_sub(pos.left);
                 row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset).max(0);
 

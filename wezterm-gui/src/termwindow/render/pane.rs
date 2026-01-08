@@ -303,36 +303,20 @@ impl crate::TermWindow {
             palette.cursor_fg == global_cursor_fg && palette.cursor_bg == global_cursor_bg;
 
         {
-            // Get cwd_row_offset - CWD header takes up this many visual rows
-            let cwd_offset = self.cwd_row_offset() as StableRowIndex;
+            // Calculate cwd_row_offset: 1 when multiple panes (CWD overlay visible), 0 otherwise
+            // CWD overlay covers the first visual row, so we need to:
+            // 1. Shift content down by 1 row in rendering
+            // 2. Fetch one fewer line to prevent content overflow
+            let pane_count = self.get_panes_to_render().len();
+            let cwd_row_offset: usize = if pane_count > 1 { 1 } else { 0 };
 
-            // We can only display (viewport_rows - cwd_offset) rows due to CWD header
-            let displayable_rows = (dims.viewport_rows as StableRowIndex).saturating_sub(cwd_offset);
-
-            // Calculate the range of rows to render
-            // If cursor is near the bottom, adjust range to include cursor row
-            let cursor_row = cursor.y;
+            // Use the pane's actual visual height (pos.height), not dims.viewport_rows
+            // This ensures we don't render more rows than the pane can display
+            let pane_height = pos.height;
+            let displayable_rows = pane_height.saturating_sub(cwd_row_offset);
             let stable_range = match current_viewport {
-                Some(top) => {
-                    // Check if cursor would be outside the displayable range
-                    let range_end = top + displayable_rows;
-                    if cursor_row >= range_end && cursor_row < top + dims.viewport_rows as StableRowIndex {
-                        // Shift range to include cursor (scroll view down)
-                        let new_top = cursor_row - displayable_rows + 1;
-                        new_top..new_top + displayable_rows
-                    } else {
-                        top..range_end
-                    }
-                }
-                None => {
-                    let range_end = dims.physical_top + displayable_rows;
-                    if cursor_row >= range_end && cursor_row < dims.physical_top + dims.viewport_rows as StableRowIndex {
-                        let new_top = cursor_row - displayable_rows + 1;
-                        new_top..new_top + displayable_rows
-                    } else {
-                        dims.physical_top..range_end
-                    }
-                }
+                Some(top) => top..top + displayable_rows as StableRowIndex,
+                None => dims.physical_top..dims.physical_top + displayable_rows as StableRowIndex,
             };
 
             pos.pane
@@ -362,14 +346,13 @@ impl crate::TermWindow {
                 window_is_transparent: bool,
                 layers: &'a mut TripleLayerQuadAllocator<'b>,
                 error: Option<anyhow::Error>,
+                // Offset for CWD header - 1 when multiple panes (CWD overlay visible), 0 otherwise
                 cwd_row_offset: usize,
             }
 
             let left_pixel_x = padding_left
                 + border.left.get() as f32
                 + (pos.left as f32 * self.render_metrics.cell_size.width as f32);
-
-            let cwd_row_offset = self.cwd_row_offset();
 
             let mut render = LineRender {
                 term_window: self,
@@ -465,8 +448,7 @@ impl crate::TermWindow {
                         selection: selrange.clone(),
                         cursor,
                         shape_hash,
-                        // Add cwd_row_offset to shift content down, making room for CWD header
-                        // Since stable_range skips first cwd_row_offset rows, last row stays within pane
+                        // Shift content down by cwd_row_offset to make room for CWD header
                         top_pixel_y: NotNan::new(self.top_pixel_y).unwrap()
                             + (line_idx + self.pos.top + self.cwd_row_offset) as f32
                                 * self.term_window.render_metrics.cell_size.height as f32,
