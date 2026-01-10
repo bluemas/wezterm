@@ -296,6 +296,24 @@ impl super::TermWindow {
         if let Some(window) = mux.get_window(self.mux_window_id) {
             for tab in window.iter() {
                 tab.resize(size);
+
+                // When multiple panes exist, CWD overlay covers the first row of each pane.
+                // We need to reduce the PTY height by 1 row so the terminal doesn't render
+                // content that would overflow the visible area.
+                let panes = tab.iter_panes_ignoring_zoom();
+                if panes.len() > 1 {
+                    let cell_height = self.render_metrics.cell_size.height as usize;
+                    for pos in panes {
+                        let adjusted_size = TerminalSize {
+                            rows: pos.height.saturating_sub(1),
+                            cols: pos.width,
+                            pixel_height: pos.pixel_height.saturating_sub(cell_height),
+                            pixel_width: pos.pixel_width,
+                            dpi: size.dpi,
+                        };
+                        let _ = pos.pane.resize(adjusted_size);
+                    }
+                }
             }
         };
         self.resize_overlays();

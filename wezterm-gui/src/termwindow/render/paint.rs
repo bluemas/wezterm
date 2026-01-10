@@ -174,6 +174,26 @@ impl crate::TermWindow {
         let window_is_transparent =
             !self.window_background.is_empty() || self.config.window_background_opacity != 1.0;
 
+        // When multiple panes exist, CWD overlay covers the first row of each pane.
+        // Adjust PTY height so terminal doesn't render content that overflows visible area.
+        if panes.len() > 1 {
+            let cell_height = self.render_metrics.cell_size.height as usize;
+            for pos in &panes {
+                let dims = pos.pane.get_dimensions();
+                // Only resize if the PTY height matches the pane height (not already adjusted)
+                if dims.viewport_rows == pos.height {
+                    let adjusted_size = wezterm_term::TerminalSize {
+                        rows: pos.height.saturating_sub(1),
+                        cols: pos.width,
+                        pixel_height: pos.pixel_height.saturating_sub(cell_height),
+                        pixel_width: pos.pixel_width,
+                        dpi: dims.dpi,
+                    };
+                    let _ = pos.pane.resize(adjusted_size);
+                }
+            }
+        }
+
         let start = Instant::now();
         let gl_state = self.render_state.as_ref().unwrap();
         let layer = gl_state
