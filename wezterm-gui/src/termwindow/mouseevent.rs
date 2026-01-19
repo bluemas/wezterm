@@ -771,14 +771,18 @@ impl super::TermWindow {
                         }
                     }
                 }
-                // Account for CWD header overlay when multiple panes are visible
-                // Content is rendered shifted down by 1 row, so visual row 1 = terminal row 0
+                // When multiple panes exist, CWD header occupies row 0 visually
+                // Content is shifted down, so visual_row - cwd_offset = terminal_row
                 let cwd_row_offset: i64 = if pane_count > 1 { 1 } else { 0 };
+                let original_row = row;
                 column = column.saturating_sub(pos.left);
                 row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset).max(0);
+                log::debug!(
+                    "Mouse: original_row={}, pos.top={}, cwd_offset={}, final_row={}",
+                    original_row, pos.top, cwd_row_offset, row
+                );
                 break;
             } else if is_already_captured && pane.pane_id() == pos.pane.pane_id() {
-                // Account for CWD header overlay when multiple panes are visible
                 let cwd_row_offset: i64 = if pane_count > 1 { 1 } else { 0 };
                 column = column.saturating_sub(pos.left);
                 row = row.saturating_sub(pos.top as i64).saturating_sub(cwd_row_offset).max(0);
